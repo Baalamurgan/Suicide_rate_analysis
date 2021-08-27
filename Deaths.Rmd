@@ -1,0 +1,175 @@
+---
+title: "Suicide Rates"
+author: "Baalamurgan K A"
+date: "31/07/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r echo = T, results = 'hide'}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+```
+
+```{r}
+mydata <- read.csv("J:\\BAALA\\LIFE\\Interns\\FOSSEE\\annual-number-of-deaths-by-cause.csv")
+
+#Removing World data
+mydata <- mydata[!(mydata$Code == "OWID_WRL"),]
+head(mydata)
+```
+
+```{r}
+##Working on TOP 5 countries
+particularcountry <- filter(mydata,Code == "IND")
+#%>% summarise_if(is.numeric, mean)
+
+head(particularcountry)
+
+particularcountryplot <- gather(particularcountry, key="measure", value="value",c(4:ncol(particularcountry))) 
+
+head(particularcountryplot)
+
+ggplot(particularcountryplot, aes(x=Year, y=value))+
+  geom_bar(stat='identity', fill="dark red")+
+  facet_wrap(~measure)
+```
+
+```{r}
+#Filtering details required for suicide 
+suicidedata <- mydata[c("Entity","Code","Year","Deaths...Self.harm")]
+suicidedata <- suicidedata %>% arrange((Code))
+
+#Rounding off Death rate by suicide to 2 decimal values
+suicidedata$"Deaths...Self.harm" <- round(suicidedata$"Deaths...Self.harm",digits=2)
+
+#Rename column name
+suicidedata <- rename(suicidedata,"Deaths_suicide"="Deaths...Self.harm")
+
+#Removing null country CODES
+suicidedata[suicidedata == "" | suicidedata == " "] <- NA 
+suicidedata <- suicidedata[complete.cases(suicidedata),] #only this statement is not removing the blank cells
+suicidedata <- suicidedata[!(suicidedata$Code == ""),]
+#sum(suicidedata$Code == "")
+#sum(is.na(suicidedata))
+
+suicidedata <- suicidedata %>% arrange(Code)
+head(suicidedata)
+```
+
+```{r}
+#Adding total no of suicides per country
+suicidedata <- group_by(suicidedata,Code)
+suicidedata$"Deaths_suicide" <- round(suicidedata$"Deaths_suicide",digits=2)
+
+head(suicidedata)
+```
+
+```{r}
+suicidedatabycountry <- summarise(suicidedata,mean(Deaths_suicide))
+
+suicidedatabycountry <- suicidedatabycountry[!is.na(suicidedatabycountry$"mean(Deaths_suicide)"),]
+
+suicidedatabycountry <- rename(suicidedatabycountry,"Total_suicides"="mean(Deaths_suicide)")
+
+suicidedatabycountry <- suicidedatabycountry %>% arrange(Code)
+
+suicidedatabycountry$Total_suicides <- round(suicidedatabycountry$Total_suicides,digits=2)
+
+head(suicidedatabycountry)
+
+ggplot(suicidedatabycountry, aes(x=Code, y=Total_suicides)) + 
+   geom_col(color="darkblue",fill="lightblue") + 
+   scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+   labs(title="Country wise suicide rate distribution")
+```
+
+
+```{r}
+##Suicide rates across countries from 1990-2017
+lastcountries <- suicidedatabycountry %>% arrange(desc(Total_suicides))
+lastcountries <- lastcountries[20:nrow(lastcountries),]
+lastcountriesnames <- lastcountries[1]
+
+#Removing the countries except top 20 countries
+top20suicidedata <- suicidedata
+for (countrypos in 1:nrow(lastcountriesnames)) {
+  countrycheck = lastcountriesnames[countrypos,]
+  countrycheckk <- countrycheck[1,1]
+  top20suicidedata <- top20suicidedata[!(top20suicidedata$Code == countrycheckk[[1]]),]
+}
+head(top20suicidedata)
+
+#Plotting in a bar graph
+suicideacrosscountriesplotformat <-  recast(top20suicidedata,Year ~ Code, id.var = c("Entity","Year","Code"))
+head(suicideacrosscountriesplotformat)
+
+suicideacrosscountries <- gather(suicideacrosscountriesplotformat, key="measure", value="value",c(2:ncol(testsuicide)))
+head(suicideacrosscountries)
+
+ggplot(suicideacrosscountries, aes(x=Year, y=value)) +
+  geom_bar(stat='identity',color = "pink", fill="yellow") +
+  facet_wrap(~measure)
+```
+
+```{r}
+##Suicide rate in 1990 vs 2017
+suicidedatacompareyearwise <- top20suicidedata
+suicidedatacompareyearwise <- suicidedatacompareyearwise %>% filter(grepl('1990|2017', Year))
+
+ggplot(suicidedatacompareyearwise, aes(x = Entity, y = Deaths_suicide,label = Year)) +
+    geom_point(aes(color = factor(Year)))+
+    geom_text(hjust = 0, nudge_x = 0.05,check_overlap = TRUE)+
+    scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+    theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+##Focusing on INDIA
+```{r}
+#Distribution of all Deaths in India
+Code="IND"
+indiadata <- mydata[(mydata$Code==Code),]
+indiadata <- indiadata[(indiadata$Year=="2017"),]
+
+row.names(indiadata) <- indiadata$Year
+indiadata <- indiadata[-1:-3]
+indiadata <- indiadata[-3]
+indiadata <- gather(indiadata, key="Deaths", value="Rate",c(1:ncol(indiadata)))
+```
+
+```{r}
+#Getting top 20 Death factors
+indiadata <- indiadata %>% arrange(desc(Rate))
+indiadata <- indiadata[0:15,]
+
+indiadata <- indiadata %>% 
+  mutate(prop = Rate / sum(indiadata$Rate) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+
+pie = ggplot(indiadata, aes(x="", y=Rate, fill=Deaths)) + geom_bar(stat="identity", width=1)
+pie = pie + coord_polar("y", start=0) + geom_text(aes(label = paste0(round(prop), "%")), position = position_stack(vjust = 0.5),check_overlap = TRUE,size=3)
+pie = pie + scale_fill_manual(values=rainbow(nrow(indiadata)))
+pie = pie + labs(x = NULL, y = NULL, fill = NULL, title = paste("Death Share across",Code))
+pie = pie + theme_classic() + theme(axis.line = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank(),
+          plot.title = element_text(hjust = 0.5, color = "#666666"))
+pie
+```
+
+```{r}
+##Analysing suicide rates
+indiasuicidedata <- suicidedata[c("Code","Year","Deaths_suicide")]
+indiasuicidedata <- filter(indiasuicidedata,Code == "IND")
+indiasuicidedata <- indiasuicidedata[-1]
+head(indiasuicidedata)
+
+#Graph Plot for India from 1990-2017
+indiasuicidedata <- indiasuicidedata %>% arrange(Year)
+ggplot(indiasuicidedata, aes(x = Year, y = Deaths_suicide)) +
+  geom_line(colour="red")
+```
